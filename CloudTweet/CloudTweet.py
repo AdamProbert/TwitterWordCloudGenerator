@@ -12,8 +12,9 @@ import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
 import urllib.request
-import random
+from imgurpython import ImgurClient
 
+import json
 
 from wordcloud import WordCloud
 
@@ -24,7 +25,6 @@ class CloudTweet:
 
     api = None
     auth = None
-    search_terms = ['Gibraltar']
     tweets = []
     tweet_word_count = {}
 
@@ -47,13 +47,50 @@ class CloudTweet:
     def main(self):
 
         self.logger.info("Beginning main method")
-        twitter_stream = Stream(self.auth, listener=MyListener(10*60, 1000))
-        twitter_stream.filter(track=self.search_terms) #Search for the voice using a new thread
-        self.logger.info("Stream returned")
-        self.process_tweets()
-        # self.print_word_count()
-        self.write_tweet_to_file()
-        self.generate_word_cloud()
+        self.logger.info("Collecting trending topics")
+        trends = self.find_trends()
+
+        for trend in trends[:5]:
+            trend = trend['name']
+            filename = '/Users/Adam/Dropbox/Programming/PythonProjects/TwitterWordCloudGenerator/Resources/Clouds/' + trend + '_cloud.png'
+            comment = "A TweetCloud for " + trend + "!"
+
+            self.logger.info("Streaming tweets for for: " + trend)
+
+            # Collect tweets
+            self.stream_tweets(topic=trend, num=100)
+
+            self.logger.info("Streaming complete")
+
+            # Write to file
+            self.write_tweet_to_file()
+
+            # Need some stuff for collecting the background image, bing api looks good.
+            self.generate_word_cloud(filename)
+
+            # Upload to imgur
+            # self.upload_word_cloud()
+
+            # Post the tweet
+            self.api.update_with_media(filename, comment)
+
+            self.logger.info("Tweet posted for " + trend)
+
+        self.logger.info("All trends done")
+
+
+        # self.logger.info("Stream returned")
+        # self.process_tweets()
+        # # self.print_word_count()
+        # self.write_tweet_to_file()
+        # self.generate_word_cloud()
+        # trend_list = self.find_trends()
+
+    def stream_tweets(self, topic='#python', num=1000):
+
+        twitter_stream = Stream(self.auth, listener=MyListener(10*60, num))
+        twitter_stream.filter(track=topic) #Search for the voice using a new thread
+
 
 
     def process_tweets(self):
@@ -79,14 +116,13 @@ class CloudTweet:
     def write_tweet_to_file(self, filename='/Users/Adam/Dropbox/Programming/PythonProjects/TwitterWordCloudGenerator/Resources/tweets.txt'):
 
         self.logger.info("Writing tweets to file")
-        with open(filename, 'a') as f:
+        with open(filename, 'w') as f:
             for tweet in self.tweets:
                 f.write(tweet.text)
 
+        time.sleep(2)
+
         self.logger.info("Done writing tweets to file")
-
-
-
 
 
     def print_word_count(self):
@@ -96,7 +132,7 @@ class CloudTweet:
             print(word +"\t:\t" + str(count))
 
 
-    def generate_word_cloud(self, imageurl='http://concretecanvas.com/wp-content/uploads/2013/07/UK_map1.png'):
+    def generate_word_cloud(self, filename, imageurl='http://concretecanvas.com/wp-content/uploads/2013/07/UK_map1.png'):
 
         self.logger.info("Generating word cloud")
 
@@ -106,20 +142,44 @@ class CloudTweet:
 
         text = open("../Resources/tweets.txt").read()
 
-        wc = WordCloud(max_words=1000, mask=mask, margin=10,
+        wc = WordCloud(max_words=400, mask=mask, margin=10,
                        random_state=1).generate(text)
         # store default colored image
         default_colors = wc.to_array()
         plt.imshow(wc.recolor(random_state=3),
                    interpolation="bilinear")
-        wc.to_file(self.search_terms[0] + ".png")
+        wc.to_file(filename)
         plt.axis("off")
         plt.figure()
         plt.imshow(default_colors, interpolation="bilinear")
-        plt.axis("off")
-        plt.show()
 
-        self.logger.info("Finished generating word cloud")
+    def upload_word_cloud(self, path):
+
+        self.logger.info("Uploading cloud to imgur...")
+        client_id = '71f48d008a5cdf2'
+        client_secret = 'cc526f8fb0275877cbcf7cdc3854206c4a02e908'
+
+        client = ImgurClient(client_id, client_secret)
+
+        # Example request
+        image = client.upload_from_path(path, config=None, anon=True)
+
+        self.logger.info("Done!")
+        self.logger.info("Imgur link: " + image['link'])
+
+        return image['link']
+
+    # Returns ordered list of trending topics from UK.
+    def find_trends(self):
+        trends_list = []
+        places = self.api.trends_place(23424975)
+
+        for uk in places:
+            for trend in uk["trends"]:
+                trends_list.append(trend)
+                # self.logger.info("Trending topic: " + trend)
+
+        return trends_list
 
 
 
@@ -135,10 +195,13 @@ class CloudTweet:
         self.logger = logger
 
 
+
+
 class MyListener(StreamListener):
 
 
     def __init__(self, max_time=10*60, max_tweets=10000):
+        CloudTweet.tweets = []
         start_time = time.time()
         self.limit = start_time+max_time
         self.max_tweets = max_tweets
@@ -147,13 +210,14 @@ class MyListener(StreamListener):
         super(MyListener, self).__init__()
 
     def on_status(self, status):
+
         if time.time() > self.limit:
             return False
-        elif len(CloudTweet.tweets)>self.max_tweets:
+        elif len(CloudTweet.tweets) > self.max_tweets:
             return False
         else:
             CloudTweet.tweets.append(status)
-            self.logger.info("Received new tweet!")
+            print("Collecting tweets. Tweet: " + str(len(CloudTweet.tweets)))
 
 
     def on_error(self, status):
