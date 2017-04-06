@@ -30,11 +30,6 @@ class CloudTweet:
 
     def __init__(self):
 
-        consumer_key = 'TOCHDhZpbQFsmg4d2odjVSxJm'
-        consumer_secret = 'WP6b1j3Uw3WwjN1hrGk8bQQm7bzgJ7kpEHQH6wHf76x0WafYAV'
-        access_token = '848315682358005760-OmSl5diTQCpOljQFrkA71favcsBnkzo'
-        access_secret = 'SIhr67MQl71yg2l3WS4IMHaxr8v2tSqJVlzxq6T535VGw'
-
         self.setup_logger()
 
         self.auth = OAuthHandler(consumer_key, consumer_secret)
